@@ -17,6 +17,10 @@ def validate(url, root=""):
         return url
     if startswith(url, "/"):
         return getDomain(root) + url
+    #else it starts with nothing, it's a page in the same directory
+    root = root.split("/")
+    root[-1] = ""
+    root = "/".join(root)
     return root + url
 
 def relativeLinkRemoval(url):
@@ -63,15 +67,14 @@ class Page:
         if "mailto:" in url:
             raise Exception(f"{url} is a mailto link")
         print(f"Loading {url}...")
-        req = requests.get(url, timeout=5)
+        req = requests.get(url, timeout=3)
         if not req.ok:
             raise Exception(f"Response gave {req.status_code}: {req.reason}")
-        root = getDomain(url)
         content = BeautifulSoup(str(req.content), "html.parser")
         links = []
         for link in content.find_all('a'):
             try:
-                link = validate(link.get('href'), root)
+                link = validate(link.get('href'), url)
                 linkRoot = getDomain(link)
                 if not linkRoot in domains:
                     domains[linkRoot] = []
@@ -157,8 +160,8 @@ history = []
 window = tk.Tk() # Create Tk object
 window.configure(bg='black')
 window.wm_attributes('-zoomed', 1)
-img = ImageTk.PhotoImage(Image.new("RGB", (100, 100))) # Make placeholder image for the label
-label = tk.Label(window, image=img)
+image = ImageTk.PhotoImage(Image.new("RGB", (100, 100))) # Make placeholder image for the label
+label = tk.Label(window, image=image)
 label.pack() # Add to the window
 
 def refresh():
@@ -172,7 +175,7 @@ dpi = 60
 inchWidth = window.winfo_width() / dpi
 inchHeight = window.winfo_height() / dpi
 
-def drawGraph(text):
+def draw():
     try:
         plt.clf()
         pos = nx.kamada_kawai_layout(links)
@@ -183,15 +186,19 @@ def drawGraph(text):
         buf.seek(0)
         fig = Image.open(buf).copy()
         buf.close()
+        return fig
         # https://stackoverflow.com/a/3482156/
         #draw = ImageDraw.Draw(fig)
         #draw.text((0, 0), text, (255,255,255))
-        image = ImageTk.PhotoImage(fig)
-        label.configure(image=image)
-        label.image = image # Tkinter weirdness means this is how you do it
-        refresh()
     except Exception as e:
         raise e
+
+def drawGraph(text):
+    img = draw()
+    image = ImageTk.PhotoImage(img.copy())
+    label.configure(image=image)
+    label.image = image # Tkinter weirdness means this is how you do it
+    refresh()
 
 def add_edge(f, t):
     links.add_edge(f, t)
@@ -235,15 +242,21 @@ try:
                 print(f"Invalid link: {link}")
                 raise e
                 continue
-        drawGraph(page.url)  
+        drawGraph(page.url)
 except Exception as e:
     if e == IndexError:
         pass
-    raise e
     stop()
 
-fname = f"{dorb}-{url}-{len(links)}.json".replace("/", "-")
-with open(fname, "w") as file:
-    data = nx.node_link_data(links)
-    json.dump(data, file, indent=4)
-    print(f"Graph output written to {fname}")
+window.destroy()
+
+fname = f"{dorb}-{url}-{len(links)}".replace("/", "-")
+if not input("Save graph to json file? (y/n)\n")[0].lower() == "n":
+    with open(f"{fname}.json", "w") as file:
+        data = nx.node_link_data(links)
+        json.dump(data, file, indent=4)
+        print(f"Graph output written to {fname}")
+
+if not input("Save graph as PNG file? (y/n)\n")[0].lower() == "n":
+    img = draw()
+    img.save(f"{fname}.png")
